@@ -1,0 +1,459 @@
+package dk.alexandra.fresco.lib.compare;
+
+import dk.alexandra.fresco.framework.Application;
+import dk.alexandra.fresco.framework.DRes;
+import dk.alexandra.fresco.framework.TestThreadRunner.TestThread;
+import dk.alexandra.fresco.framework.TestThreadRunner.TestThreadFactory;
+import dk.alexandra.fresco.framework.builder.binary.ProtocolBuilderBinary;
+import dk.alexandra.fresco.framework.builder.numeric.Comparison;
+import dk.alexandra.fresco.framework.builder.numeric.Numeric;
+import dk.alexandra.fresco.framework.builder.numeric.ProtocolBuilderNumeric;
+import dk.alexandra.fresco.framework.sce.resources.ResourcePool;
+import dk.alexandra.fresco.framework.util.ByteAndBitConverter;
+import dk.alexandra.fresco.framework.value.SBool;
+import dk.alexandra.fresco.framework.value.SInt;
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+import org.junit.Assert;
+
+public class CompareTests {
+
+  public static class CompareAndSwapTest<ResourcePoolT extends ResourcePool>
+      extends TestThreadFactory<ResourcePoolT, ProtocolBuilderBinary> {
+
+    public CompareAndSwapTest() {
+    }
+
+    @Override
+    public TestThread<ResourcePoolT, ProtocolBuilderBinary> next() {
+      return new TestThread<ResourcePoolT, ProtocolBuilderBinary>() {
+        @Override
+        public void test() throws Exception {
+          List<Boolean> rawLeft = Arrays.asList(ByteAndBitConverter.toBoolean("ee"));
+          List<Boolean> rawRight = Arrays.asList(ByteAndBitConverter.toBoolean("00"));
+
+          Application<List<List<Boolean>>, ProtocolBuilderBinary> app =
+              producer -> producer.seq(seq -> {
+                List<DRes<SBool>> left =
+                    rawLeft.stream().map(seq.binary()::known).collect(Collectors.toList());
+                List<DRes<SBool>> right =
+                    rawRight.stream().map(seq.binary()::known).collect(Collectors.toList());
+
+                DRes<List<List<DRes<SBool>>>> compared =
+                    new CompareAndSwap(left, right).buildComputation(seq);
+                return compared;
+              }).seq((seq, opened) -> {
+                List<List<DRes<Boolean>>> result = new ArrayList<>();
+                for (List<DRes<SBool>> entry : opened) {
+                  result.add(entry.stream().map(DRes::out).map(seq.binary()::open)
+                      .collect(Collectors.toList()));
+                }
+
+                return () -> result;
+              }).seq((seq, opened) -> {
+                List<List<Boolean>> result = new ArrayList<>();
+                for (List<DRes<Boolean>> entry : opened) {
+                  result.add(entry.stream().map(DRes::out).collect(Collectors.toList()));
+                }
+
+                return () -> result;
+              });
+
+          List<List<Boolean>> res = runApplication(app);
+
+          Assert.assertEquals("00", ByteAndBitConverter.toHex(res.get(0)));
+          Assert.assertEquals("ee", ByteAndBitConverter.toHex(res.get(1)));
+        }
+      };
+    }
+  }
+
+  /**
+   * Compares the two numbers 3 and 5 and checks that 3 <= 5. Also checks that 5 is not <= 3 and
+   * that 3 <= 3
+   */
+  public static class TestCompareLT<ResourcePoolT extends ResourcePool>
+      extends TestThreadFactory<ResourcePoolT, ProtocolBuilderNumeric> {
+
+    @Override
+    public TestThread<ResourcePoolT, ProtocolBuilderNumeric> next() {
+      return new TestThread<ResourcePoolT, ProtocolBuilderNumeric>() {
+
+        @Override
+        public void test() throws Exception {
+          Application<List<BigInteger>, ProtocolBuilderNumeric> app = builder -> {
+            Numeric input = builder.numeric();
+            DRes<SInt> x = input.input(BigInteger.valueOf(3), 1);
+            DRes<SInt> y = input.input(BigInteger.valueOf(5), 1);
+            Comparison comparison = builder.comparison();
+            DRes<SInt> compResult1 = comparison.compareLEQ(x, y);
+            DRes<SInt> compResult2 = comparison.compareLEQ(y, x);
+            DRes<SInt> compResult3 = comparison.compareLEQ(x, x);
+            Numeric open = builder.numeric();
+            DRes<BigInteger> res1;
+            DRes<BigInteger> res2;
+            res1 = open.open(compResult1);
+            res2 = open.open(compResult2);
+            DRes<BigInteger> res3 = open.open(compResult3);
+            return () -> Arrays.asList(res1.out(), res2.out(), res3.out());
+          };
+          List<BigInteger> output = runApplication(app);
+          Assert.assertEquals(BigInteger.ONE, output.get(0));
+          Assert.assertEquals(BigInteger.ZERO, output.get(1));
+          Assert.assertEquals(BigInteger.ONE, output.get(2));
+        }
+      };
+    }
+  }
+
+  public static class TestCompareEQSimple<ResourcePoolT extends ResourcePool>
+      extends TestThreadFactory<ResourcePoolT, ProtocolBuilderNumeric> {
+
+    @Override
+    public TestThread<ResourcePoolT, ProtocolBuilderNumeric> next() {
+      return new TestThread<ResourcePoolT, ProtocolBuilderNumeric>() {
+
+        @Override
+        public void test() throws Exception {
+          Application<List<BigInteger>, ProtocolBuilderNumeric> app = builder -> {
+            Numeric input = builder.numeric();
+            // Pair 1
+            DRes<SInt> x1 = input.known(BigInteger.valueOf(3));
+            DRes<SInt> y1 = input.known(BigInteger.valueOf(5));
+
+            Comparison comparison = builder.comparison();
+
+            DRes<SInt> compResult1 = comparison.equals(x1, x1);
+            DRes<SInt> compResult2 = comparison.equals(x1, y1);
+            Numeric open = builder.numeric();
+            DRes<BigInteger> res1 = open.open(compResult1);
+            DRes<BigInteger> res2 = open.open(compResult2);
+            return () -> Arrays.asList(res1.out(), res2.out());
+          };
+          List<BigInteger> output = runApplication(app);
+          Assert.assertEquals(BigInteger.ONE, output.get(0));
+          Assert.assertEquals(BigInteger.ZERO, output.get(1));
+        }
+      };
+    }
+  }
+
+  /**
+   * Compares the two numbers x and y and checks that x == x. Also checks that x != y
+   */
+  public static class TestCompareEQ<ResourcePoolT extends ResourcePool>
+      extends TestThreadFactory<ResourcePoolT, ProtocolBuilderNumeric> {
+
+    @Override
+    public TestThread<ResourcePoolT, ProtocolBuilderNumeric> next() {
+      return new TestThread<ResourcePoolT, ProtocolBuilderNumeric>() {
+
+        @Override
+        public void test() throws Exception {
+          Application<List<BigInteger>, ProtocolBuilderNumeric> app = builder -> {
+            Numeric input = builder.numeric();
+            // Pair 1
+            DRes<SInt> x1 = input.known(BigInteger.valueOf(3));
+            DRes<SInt> y1 = input.known(BigInteger.valueOf(5));
+            // Pair 2
+            DRes<SInt> x2 = input.known(BigInteger.valueOf(11833));
+            DRes<SInt> y2 = input.known(BigInteger.valueOf(-583));
+            // Pair 3
+            // Minimum legal case
+            DRes<SInt> x3 = input.known(BigInteger.valueOf(2).pow(62).subtract(
+                BigInteger.ONE).negate());
+            DRes<SInt> y3 = input.known(BigInteger.valueOf(2).pow(62).subtract(
+                BigInteger.valueOf(2)).negate());
+
+            Comparison comparison = builder.comparison();
+
+            DRes<SInt> compResult1 = comparison.equals(x1, x1);
+            DRes<SInt> compResult2 = comparison.equals(x1, y1);
+            DRes<SInt> compResult3 = comparison.equals(x2, x2);
+            DRes<SInt> compResult4 = comparison.equals(x2, y2);
+            DRes<SInt> compResult5 = comparison.equals(x3, x3);
+            DRes<SInt> compResult6 = comparison.equals(x3, y3);
+            Numeric open = builder.numeric();
+            DRes<BigInteger> res1 = open.open(compResult1);
+            DRes<BigInteger> res2 = open.open(compResult2);
+            DRes<BigInteger> res3 = open.open(compResult3);
+            DRes<BigInteger> res4 = open.open(compResult4);
+            DRes<BigInteger> res5 = open.open(compResult5);
+            DRes<BigInteger> res6 = open.open(compResult6);
+            return () -> Arrays.asList(res1.out(), res2.out(), res3.out(), res4
+                .out(), res5.out(), res6.out());
+          };
+          List<BigInteger> output = runApplication(app);
+          Assert.assertEquals(BigInteger.ONE, output.get(0));
+          Assert.assertEquals(BigInteger.ZERO, output.get(1));
+          Assert.assertEquals(BigInteger.ONE, output.get(2));
+          Assert.assertEquals(BigInteger.ZERO, output.get(3));
+          Assert.assertEquals(BigInteger.ONE, output.get(4));
+          Assert.assertEquals(BigInteger.ZERO, output.get(5));
+        }
+      };
+    }
+  }
+
+  public static class TestCompareEQZero<ResourcePoolT extends ResourcePool>
+      extends TestThreadFactory<ResourcePoolT, ProtocolBuilderNumeric> {
+
+    private int bitLength;
+
+    public TestCompareEQZero(int bitLength) {
+      this.bitLength = bitLength;
+    }
+
+    @Override
+    public TestThread<ResourcePoolT, ProtocolBuilderNumeric> next() {
+      return new TestThread<ResourcePoolT, ProtocolBuilderNumeric>() {
+
+
+        @Override
+        public void test() {
+          Application<List<BigInteger>, ProtocolBuilderNumeric> app = builder -> {
+            Numeric input = builder.numeric();
+            DRes<SInt> w = input.known(BigInteger.valueOf(-1));
+            DRes<SInt> x = input.known(BigInteger.valueOf(0));
+            // Max positive value
+            DRes<SInt> y = input.known(BigInteger.valueOf(2).pow(bitLength - 1).subtract(
+                BigInteger.ONE));
+            // Min negative value
+            DRes<SInt> z = input.known(BigInteger.valueOf(2).pow(bitLength - 1).negate());
+            Comparison comparison = builder.comparison();
+            DRes<SInt> compResult1 = comparison.compareZero(w, bitLength);
+            DRes<SInt> compResult2 = comparison.compareZero(x, bitLength);
+            DRes<SInt> compResult3 = comparison.compareZero(y, bitLength);
+            DRes<SInt> compResult4 = comparison.compareZero(z, bitLength);
+            Numeric open = builder.numeric();
+            DRes<BigInteger> res1 = open.open(compResult1);
+            DRes<BigInteger> res2 = open.open(compResult2);
+            DRes<BigInteger> res3 = open.open(compResult3);
+            DRes<BigInteger> res4 = open.open(compResult4);
+            return () -> Arrays.asList(res1.out(), res2.out(), res3.out(), res4
+                .out());
+          };
+          List<BigInteger> output = runApplication(app);
+          Assert.assertEquals(BigInteger.ZERO, output.get(0));
+          Assert.assertEquals(BigInteger.ONE, output.get(1));
+          Assert.assertEquals(BigInteger.ZERO, output.get(2));
+          Assert.assertEquals(BigInteger.ZERO, output.get(3));
+        }
+      };
+    }
+  }
+
+  public static class TestCompareEQEdgeCases<ResourcePoolT extends ResourcePool>
+      extends TestThreadFactory<ResourcePoolT, ProtocolBuilderNumeric> {
+
+    // returns modulus / 2 + added
+    private BigInteger halfModPlus(BigInteger modulus, String added) {
+      return modulus.divide(BigInteger.valueOf(2)).add(new BigInteger(added));
+    }
+
+    @Override
+    public TestThread<ResourcePoolT, ProtocolBuilderNumeric> next() {
+      return new TestThread<ResourcePoolT, ProtocolBuilderNumeric>() {
+
+        @Override
+        public void test() throws Exception {
+          Application<List<BigInteger>, ProtocolBuilderNumeric> app = builder -> {
+            Numeric input = builder.numeric();
+            Comparison comparison = builder.comparison();
+            BigInteger modulus = builder.getBasicNumericContext().getModulus();
+
+            // check (mod / 2) == (mod / 2)
+            DRes<SInt> compResultOne = comparison
+                .equals(input.known(halfModPlus(modulus, "0")),
+                    input.known(halfModPlus(modulus, "0")));
+            // check (mod / 2 + 1) == (mod / 2 + 1)
+            DRes<SInt> compResultTwo = comparison
+                .equals(input.known(halfModPlus(modulus, "1")),
+                    input.known(halfModPlus(modulus, "1")));
+            // check (mod / 2 + 1) != (mod / 2 + 2)
+            DRes<SInt> compResultThree = comparison
+                .equals(input.known(halfModPlus(modulus, "1")),
+                    input.known(halfModPlus(modulus, "2")));
+            // check (mod / 2 + 2) != 2
+            DRes<SInt> compResultFour = comparison
+                .equals(input.known(halfModPlus(modulus, "2")), input.known(new BigInteger("2")));
+            // check -1 == -1
+            DRes<SInt> compResultFive = comparison
+                .equals(input.known(BigInteger.valueOf(-1)), input.known(BigInteger.valueOf(-1)));
+            // check -1 != -2
+            DRes<SInt> compResultSix = comparison
+                .equals(input.known(BigInteger.valueOf(-1)), input.known(BigInteger.valueOf(-2)));
+            // check -1 != 1
+            DRes<SInt> compResultSeven = comparison
+                .equals(input.known(BigInteger.valueOf(-1)), input.known(BigInteger.valueOf(1)));
+
+            List<DRes<SInt>> comps = Arrays
+                .asList(compResultOne, compResultTwo, compResultThree, compResultFour,
+                    compResultFive, compResultSix, compResultSeven);
+            DRes<List<DRes<BigInteger>>> opened = builder.collections().openList(() -> comps);
+
+            return builder.seq((seq) -> {
+              return () -> opened.out().stream().map(DRes::out).collect(Collectors.toList());
+            });
+          };
+          List<BigInteger> output = runApplication(app);
+          Assert.assertEquals(BigInteger.ONE, output.get(0));
+          Assert.assertEquals(BigInteger.ONE, output.get(1));
+          Assert.assertEquals(BigInteger.ZERO, output.get(2));
+          Assert.assertEquals(BigInteger.ZERO, output.get(3));
+          Assert.assertEquals(BigInteger.ONE, output.get(4));
+          Assert.assertEquals(BigInteger.ZERO, output.get(5));
+          Assert.assertEquals(BigInteger.ZERO, output.get(6));
+        }
+      };
+    }
+  }
+
+  public static class TestCompareLTEdgeCases<ResourcePoolT extends ResourcePool>
+      extends TestThreadFactory<ResourcePoolT, ProtocolBuilderNumeric> {
+
+    // returns 2^maxBitLength - toSubtract
+    private BigInteger maxValMinus(int maxBitLength, String toSubtract) {
+      return BigInteger.valueOf(2).pow(maxBitLength).subtract(new BigInteger(toSubtract));
+    }
+
+    @Override
+    public TestThread<ResourcePoolT, ProtocolBuilderNumeric> next() {
+      return new TestThread<ResourcePoolT, ProtocolBuilderNumeric>() {
+
+        @Override
+        public void test() throws Exception {
+          Application<List<BigInteger>, ProtocolBuilderNumeric> app = builder -> {
+            Numeric input = builder.numeric();
+            Comparison comparison = builder.comparison();
+            BigInteger modulus = builder.getBasicNumericContext().getModulus();
+            int maxBitLength = builder.getBasicNumericContext().getMaxBitLength();
+
+            List<DRes<SInt>> comps = Arrays.asList(
+                // check MAX <= MAX
+                comparison.compareLEQ(
+                    input.known(maxValMinus(maxBitLength, "0")),
+                    input.known(maxValMinus(maxBitLength, "0"))),
+                // check not MAX <= 1
+                comparison.compareLEQ(
+                    input.known(maxValMinus(maxBitLength, "0")),
+                    input.known(BigInteger.ONE)),
+                // check -3 <= -1
+                comparison.compareLEQ(
+                    input.known(BigInteger.valueOf(-3)),
+                    input.known(BigInteger.valueOf(-1))),
+                // check not -1 <= -3
+                comparison.compareLEQ(
+                    input.known(BigInteger.valueOf(-1)),
+                    input.known(BigInteger.valueOf(-3))),
+                // check -3 <= 0
+                comparison.compareLEQ(
+                    input.known(BigInteger.valueOf(-3)),
+                    input.known(BigInteger.valueOf(0))),
+                // check -3 <= 1
+                comparison.compareLEQ(
+                    input.known(BigInteger.valueOf(-3)),
+                    input.known(BigInteger.valueOf(1)))
+            );
+            DRes<List<DRes<BigInteger>>> opened = builder.collections().openList(() -> comps);
+
+            return builder.seq((seq) -> {
+              return () -> opened.out().stream().map(DRes::out).collect(Collectors.toList());
+            });
+          };
+          List<BigInteger> output = runApplication(app);
+          Assert.assertEquals(BigInteger.ONE, output.get(0));
+          Assert.assertEquals(BigInteger.ZERO, output.get(1));
+          Assert.assertEquals(BigInteger.ONE, output.get(2));
+          Assert.assertEquals(BigInteger.ZERO, output.get(3));
+          Assert.assertEquals(BigInteger.ONE, output.get(4));
+          Assert.assertEquals(BigInteger.ONE, output.get(5));
+        }
+      };
+    }
+  }
+
+  public static class TestLessThanLogRounds<ResourcePoolT extends ResourcePool>
+      extends TestThreadFactory<ResourcePoolT, ProtocolBuilderNumeric> {
+
+    private final List<BigInteger> openLeft;
+    private final List<BigInteger> openRight;
+    private final List<BigInteger> expected;
+
+    public TestLessThanLogRounds(int maxBitLength) {
+      BigInteger two = BigInteger.valueOf(2);
+      this.openLeft = Arrays.asList(
+          BigInteger.ZERO,
+          BigInteger.ONE,
+          BigInteger.ONE,
+          BigInteger.valueOf(-1),
+          BigInteger.valueOf(-111111),
+          BigInteger.valueOf(-111),
+          BigInteger.valueOf(-110),
+          BigInteger.ONE,
+          two.pow(maxBitLength - 1).subtract(BigInteger.ONE),
+          two.pow(maxBitLength - 1).subtract(two),
+          BigInteger.TEN,
+          two.pow(maxBitLength - 1).subtract(BigInteger.ONE),
+          two.pow(maxBitLength - 1).subtract(two)
+      );
+      this.openRight = Arrays.asList(
+          BigInteger.ZERO,
+          BigInteger.ONE,
+          BigInteger.ZERO,
+          BigInteger.valueOf(-1),
+          BigInteger.valueOf(-111112),
+          BigInteger.valueOf(-110),
+          BigInteger.valueOf(10),
+          BigInteger.valueOf(5),
+          two.pow(maxBitLength - 1).subtract(two),
+          two.pow(maxBitLength - 1).subtract(BigInteger.ONE),
+          BigInteger.valueOf(-1),
+          BigInteger.ONE,
+          BigInteger.valueOf(-1)
+      );
+      this.expected = computeExpected(openLeft, openRight);
+    }
+
+    private static List<BigInteger> computeExpected(List<BigInteger> openLeft,
+        List<BigInteger> openRight) {
+      if (openLeft.size() != openRight.size()) {
+        throw new IllegalStateException("Incorrect test spec!");
+      }
+      List<BigInteger> expected = new ArrayList<>(openLeft.size());
+      for (int i = 0; i < openLeft.size(); i++) {
+        boolean lessThan = openLeft.get(i).compareTo(openRight.get(i)) < 0;
+        expected.add(lessThan ? BigInteger.ONE : BigInteger.ZERO);
+      }
+      return expected;
+    }
+
+    @Override
+    public TestThread<ResourcePoolT, ProtocolBuilderNumeric> next() {
+      return new TestThread<ResourcePoolT, ProtocolBuilderNumeric>() {
+
+        @Override
+        public void test() {
+          Application<List<BigInteger>, ProtocolBuilderNumeric> app = builder -> {
+            Numeric numeric = builder.numeric();
+            List<DRes<SInt>> left = numeric.known(openLeft);
+            List<DRes<SInt>> right = numeric.known(openRight);
+            List<DRes<SInt>> actualInner = new ArrayList<>(left.size());
+            for (int i = 0; i < left.size(); i++) {
+              actualInner.add(builder.comparison().compareLT(left.get(i), right.get(i),
+                  Comparison.Algorithm.LOG_ROUNDS));
+            }
+            DRes<List<DRes<BigInteger>>> opened = builder.collections().openList(() -> actualInner);
+            return () -> opened.out().stream().map(DRes::out).collect(Collectors.toList());
+          };
+          List<BigInteger> actual = runApplication(app);
+          Assert.assertEquals(expected, actual);
+        }
+      };
+    }
+  }
+
+}
