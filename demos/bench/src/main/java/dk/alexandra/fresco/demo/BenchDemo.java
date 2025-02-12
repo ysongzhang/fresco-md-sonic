@@ -58,8 +58,8 @@ public class BenchDemo implements Application<Matrix<BigDecimal>, ProtocolBuilde
     private MaxpoolingLayerParametersBench maxpoolingLayerParameters;
 
     // time
-    private long then;
-    private long now;
+    private long then = 0;
+    private long now = 0;
 
 
     // mult and cmp
@@ -157,6 +157,8 @@ public class BenchDemo implements Application<Matrix<BigDecimal>, ProtocolBuilde
                     Pair<DRes<Matrix<DRes<SReal>>>, DRes<Matrix<DRes<SReal>>>> inputs = new Pair<>(x, y);
                     return () -> inputs;
                 }).seq((seq, input) -> {
+                    now = System.currentTimeMillis();
+                    System.out.println("********************** Start Time: " + now + " ms.");
                     seq.realLinAlg().mult(input.getFirst(), input.getSecond(), true);
                     return () -> new Matrix<>(1, 1, new ArrayList<>(new ArrayList<>()));
                 });
@@ -169,6 +171,8 @@ public class BenchDemo implements Application<Matrix<BigDecimal>, ProtocolBuilde
                             ? realLinearAlgebra.input(xMatrix, 2) : realLinearAlgebra.input(nullMatrix, 2);
                     return () -> x;
                 }).seq((seq, input) -> {
+                    now = System.currentTimeMillis();
+                    System.out.println("********************** Start Time: " + now + " ms.");
                     ActivationFunctionsBench activation = new MdsonicActivationFunctionsBench(seq);
                     activation.activation(ActivationFunctionsBench.Type.RELU, input);
                     return () -> new Matrix<>(1, 1, new ArrayList<>(new ArrayList<>()));
@@ -190,6 +194,8 @@ public class BenchDemo implements Application<Matrix<BigDecimal>, ProtocolBuilde
                     Pair<DRes<Matrix<DRes<SReal>>>, Pair<DRes<Matrix<DRes<SReal>>>, DRes<Matrix<DRes<SReal>>>>> pairPair = new Pair<>(input, parameter);
                     return () -> pairPair;
                 }).seq((seq, input) -> {
+                    now = System.currentTimeMillis();
+                    System.out.println("********************** Start Time: " + now + " ms.");
                     DRes<Matrix<DRes<SReal>>> res = seq.seq(new PrivacyConvLayerBench(convLayerParameters, input.getFirst(), input.getSecond().getFirst(), input.getSecond().getSecond(), true));
                     return () -> new Matrix<>(1, 1, new ArrayList<>(new ArrayList<>()));
 //                    DRes<Matrix<DRes<BigDecimal>>> result = seq.realLinAlg().openMatrix(res);
@@ -208,6 +214,8 @@ public class BenchDemo implements Application<Matrix<BigDecimal>, ProtocolBuilde
                             ? realLinearAlgebra.input(inputMatrix, 2) : realLinearAlgebra.input(nullMatrix1, 2);
                     return () -> input;
                 }).seq((seq, input) -> {
+                    now = System.currentTimeMillis();
+                    System.out.println("********************** Start Time: " + now + " ms.");
                     DRes<Matrix<DRes<SReal>>> res = seq.seq(new MaxpoolingLayerBench(maxpoolingLayerParameters, input, true));
                     return () -> new Matrix<>(1, 1, new ArrayList<>(new ArrayList<>()));
 //                    DRes<Matrix<DRes<BigDecimal>>> result = seq.realLinAlg().openMatrix(res);
@@ -264,6 +272,8 @@ public class BenchDemo implements Application<Matrix<BigDecimal>, ProtocolBuilde
                     Pair<DRes<Matrix<DRes<SReal>>>, DRes<Matrix<DRes<SReal>>>> inputs = new Pair<>(x, y);
                     return () -> inputs;
                 }).seq((seq, input) -> {
+                    now = System.currentTimeMillis();
+                    System.out.println("********************** Start Time: " + now + " ms.");
                     seq.realLinAlg().mult(input.getFirst(), input.getSecond(), false);
                     return () -> new Matrix<>(1, 1, new ArrayList<>(new ArrayList<>()));
                 });
@@ -276,6 +286,8 @@ public class BenchDemo implements Application<Matrix<BigDecimal>, ProtocolBuilde
                             ? realLinearAlgebra.input(xMatrix, 2) : realLinearAlgebra.input(nullMatrix, 2);
                     return () -> x;
                 }).seq((seq, input) -> {
+                    now = System.currentTimeMillis();
+                    System.out.println("********************** Start Time: " + now + " ms.");
                     ActivationFunctionsBench activation = new DefaultActivationFunctionsBench(seq);
                     activation.activation(ActivationFunctionsBench.Type.RELU, input);
                     return () -> new Matrix<>(1, 1, new ArrayList<>(new ArrayList<>()));
@@ -297,6 +309,8 @@ public class BenchDemo implements Application<Matrix<BigDecimal>, ProtocolBuilde
                     Pair<DRes<Matrix<DRes<SReal>>>, Pair<DRes<Matrix<DRes<SReal>>>, DRes<Matrix<DRes<SReal>>>>> pairPair = new Pair<>(input, parameter);
                     return () -> pairPair;
                 }).seq((seq, input) -> {
+                    now = System.currentTimeMillis();
+                    System.out.println("********************** Start Time: " + now + " ms.");
                     DRes<Matrix<DRes<SReal>>> res = seq.seq(new PrivacyConvLayerBench(convLayerParameters, input.getFirst(), input.getSecond().getFirst(), input.getSecond().getSecond(), false));
                     return () -> new Matrix<>(1, 1, new ArrayList<>(new ArrayList<>()));
                 });
@@ -309,6 +323,8 @@ public class BenchDemo implements Application<Matrix<BigDecimal>, ProtocolBuilde
                             ? realLinearAlgebra.input(inputMatrix, 2) : realLinearAlgebra.input(nullMatrix1, 2);
                     return () -> input;
                 }).seq((seq, input) -> {
+                    now = System.currentTimeMillis();
+                    System.out.println("********************** Start Time: " + now + " ms.");
                     DRes<Matrix<DRes<SReal>>> res = seq.seq(new MaxpoolingLayerBench(maxpoolingLayerParameters, input, false));
                     return () -> new Matrix<>(1, 1, new ArrayList<>(new ArrayList<>()));
                 });
@@ -447,7 +463,9 @@ public class BenchDemo implements Application<Matrix<BigDecimal>, ProtocolBuilde
         cmdUtil.startNetwork();
         ResourcePoolT resourcePool = cmdUtil.getResourcePool();
         Matrix<BigDecimal> result = sce.runApplication(benchDemo, resourcePool, cmdUtil.getNetwork());
-        log.info(result.toString());
+        benchDemo.then = System.currentTimeMillis();
+        System.out.println("********************** End Time: " + benchDemo.then + " ms.");
+        System.out.println("********************** Duration: " + (benchDemo.then - benchDemo.now) + "ms.");
         cmdUtil.closeNetwork();
         sce.shutdownSCE();
 
