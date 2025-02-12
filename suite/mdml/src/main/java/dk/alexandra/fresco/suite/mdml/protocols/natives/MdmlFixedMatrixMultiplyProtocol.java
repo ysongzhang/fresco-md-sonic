@@ -75,8 +75,6 @@ public class MdmlFixedMatrixMultiplyProtocol<PlainT extends MdmlCompUInt<?, ?, P
       int xWidth = xOut.getWidth();
       int yHeight = yOut.getHeight();
       int yWidth = yOut.getWidth();
-      MdmlASIntArithmetic<PlainT>[][] xMaskedArray = new MdmlASIntArithmetic[xHeight][xWidth];
-      MdmlASIntArithmetic<PlainT>[][] yMaskedArray = new MdmlASIntArithmetic[yHeight][yWidth];
       ArrayList<ArrayList<PlainT>> xOpenedList = new ArrayList<>(xHeight);
       ArrayList<ArrayList<PlainT>> yOpenedList = new ArrayList<>(yHeight);
 
@@ -85,7 +83,6 @@ public class MdmlFixedMatrixMultiplyProtocol<PlainT extends MdmlCompUInt<?, ?, P
         ArrayList<DRes<SReal>> xRow = xOut.getRow(i);
         for (int j = 0; j < xWidth; j++) {
           MdmlMSIntArithmetic<PlainT> xTemp = factory.toMdmlMSIntArithmetic(((SFixed) xRow.get(j).out()).getSInt());
-          xMaskedArray[i][j] = xTemp.getMaskedSecret();
           xOpenedRow.add(xTemp.getOpened());
         }
         xOpenedList.add(xOpenedRow);
@@ -95,24 +92,26 @@ public class MdmlFixedMatrixMultiplyProtocol<PlainT extends MdmlCompUInt<?, ?, P
         ArrayList<DRes<SReal>> yRow = yOut.getRow(i);
         for (int j = 0; j < yWidth; j++) {
           MdmlMSIntArithmetic<PlainT> yTemp = factory.toMdmlMSIntArithmetic(((SFixed) yRow.get(j).out()).getSInt());
-          yMaskedArray[i][j] = yTemp.getMaskedSecret();
           yOpenedRow.add(yTemp.getOpened());
         }
         yOpenedList.add(yOpenedRow);
       }
 
-      Matrix<MdmlASIntArithmetic<PlainT>> xMaskedMatrix = new Matrix<>(xHeight, xWidth, xMaskedArray);
       Matrix<PlainT> xOpenedMatrix = new Matrix<>(xHeight, xWidth, xOpenedList);
-      Matrix<MdmlASIntArithmetic<PlainT>> yMaskedMatrix = new Matrix<>(yHeight, yWidth, yMaskedArray);
       Matrix<PlainT> yOpenedMatrix = new Matrix<>(yHeight, yWidth, yOpenedList);
+      Matrix<MdmlASIntArithmetic<PlainT>> xMaskedMatrix = matrixTriple.getLeft();
+      Matrix<MdmlASIntArithmetic<PlainT>> yMaskedMatrix = matrixTriple.getRight();
 
       // Matrix computations
       Matrix<PlainT> Delta_delta_x = add(xOpenedMatrix, delta_x);
       Matrix<PlainT> Delta_delta_y = add(yOpenedMatrix, delta_y);
-      Matrix<PlainT> crossOpen = mult(Delta_delta_x, Delta_delta_y, this::innerProductOfTwoPublic);
+      Matrix<PlainT> crossOpen = mult(xOpenedMatrix, yOpenedMatrix, this::innerProductOfTwoPublic);
       Matrix<MdmlASIntArithmetic<PlainT>> product1 = addConstant(matrixTriple.getProduct(), crossOpen, macKeyShare, factory.zero(), resourcePool.getMyId() == 1);
-      Matrix<MdmlASIntArithmetic<PlainT>> product2 = mult(matrixTriple.getLeft(), Delta_delta_y, (x, y) -> innerProductWithPublicPart(y, x));
-      Matrix<MdmlASIntArithmetic<PlainT>> product3 = mult(Delta_delta_x, matrixTriple.getRight(), this::innerProductWithPublicPart);
+      Matrix<MdmlASIntArithmetic<PlainT>> product2 = mult(xMaskedMatrix, yOpenedMatrix,
+              (x, y) -> innerProductWithPublicPart(y, x));
+//      Matrix<MdmlASIntArithmetic<PlainT>> product3 = mult(xOpenedMatrix, yMaskedMatrix,
+//      this::innerProductWithPublicPart);  // unknown bug
+      Matrix<MdmlASIntArithmetic<PlainT>> product3 = mult(xMaskedMatrix, yOpenedMatrix, (x, y) -> innerProductWithPublicPart(y, x));
       Delta_z_prime = sub(product1, product2);
       Delta_z_prime = sub(Delta_z_prime, product3);
 
@@ -191,11 +190,13 @@ public class MdmlFixedMatrixMultiplyProtocol<PlainT extends MdmlCompUInt<?, ?, P
               "Matrice sizes does not match - " + a.getWidth() + " != " + b.getHeight());
     }
 
+//    Matrix<B> bTrans = transpose(b);  // Exchange space for time
     Matrix<C> result = new Matrix<>(a.getHeight(), b.getWidth(), i -> {
       ArrayList<C> row = new ArrayList<>(b.getWidth());
       List<A> rowA = a.getRow(i);
       for (int j = 0; j < b.getWidth(); j++) {
         row.add(innerProductOperator.apply(rowA, b.getColumn(j)));
+//        row.add(innerProductOperator.apply(rowA, bTrans.getRow(j)));
       }
       return row;
     });
@@ -237,6 +238,13 @@ public class MdmlFixedMatrixMultiplyProtocol<PlainT extends MdmlCompUInt<?, ?, P
         row.add(rowA.get(j).addConstant(rowB.get(j), macKeyShare, zero, isPartyOne));
       }
       return row;
+    });
+    return result;
+  }
+
+  private <A> Matrix<A> transpose(Matrix<A> input) {
+    Matrix<A> result = new Matrix<>(input.getWidth(), input.getHeight(), i -> {
+      return input.getColumnArray(i);
     });
     return result;
   }

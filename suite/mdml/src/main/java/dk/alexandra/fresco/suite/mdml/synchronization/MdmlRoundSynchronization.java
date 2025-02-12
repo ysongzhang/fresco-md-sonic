@@ -25,10 +25,10 @@ import java.util.stream.StreamSupport;
  * unauthenticated values whenever an output protocol is encountered in a batch.</p>
  */
 public class MdmlRoundSynchronization<
-    HighT extends MdmlUInt<HighT>,
-    LowT extends MdmlUInt<LowT>,
-    PlainT extends MdmlCompUInt<HighT, LowT, PlainT>>
-    implements RoundSynchronization<MdmlResourcePool<PlainT>> {
+        HighT extends MdmlUInt<HighT>,
+        LowT extends MdmlUInt<LowT>,
+        PlainT extends MdmlCompUInt<HighT, LowT, PlainT>>
+        implements RoundSynchronization<MdmlResourcePool<PlainT>> {
 
   private static final int OPEN_VALUE_THRESHOLD = 1000000;
   private final int openValueThreshold;
@@ -51,24 +51,26 @@ public class MdmlRoundSynchronization<
 
   private void doMacCheck(MdmlResourcePool<PlainT> resourcePool, Network network) {
     MdmlBuilder<PlainT> builder = new MdmlBuilder<>(resourcePool.getFactory(),
-        protocolSuite.createBasicNumericContext(resourcePool),
-        protocolSuite.createRealNumericContext());
+            protocolSuite.createBasicNumericContext(resourcePool),
+            protocolSuite.createRealNumericContext());
     BatchEvaluationStrategy<MdmlResourcePool<PlainT>> batchStrategy = new BatchedStrategy<>();
     BatchedProtocolEvaluator<MdmlResourcePool<PlainT>> evaluator = new BatchedProtocolEvaluator<>(
-        batchStrategy,
-        protocolSuite,
-        batchSize);
+            batchStrategy,
+            protocolSuite,
+            batchSize);
     OpenedValueStore<MdmlASIntArithmetic<PlainT>, PlainT> store = resourcePool.getOpenedValueStore();
     MdmlMacCheckComputation<HighT, LowT, PlainT> macCheck = new MdmlMacCheckComputation<>(
-        store.popValues(),
-        resourcePool, resourcePool::createRandomGenerator, resourcePool.getDrbgSeedBitLength());
+            store.popValues(),
+            resourcePool, resourcePool::createRandomGenerator, resourcePool.getDrbgSeedBitLength());
     ProtocolBuilderNumeric sequential = builder.createSequential();
     macCheck.buildComputation(sequential);
+    // Ensure that the MAC check is executed correctly, as we previously overlooked the invocation of the eval function.
+    evaluator.eval(sequential.build(), resourcePool, network);
   }
 
   @Override
   public void finishedBatch(int gatesEvaluated, MdmlResourcePool<PlainT> resourcePool,
-      Network network) {
+                            Network network) {
     OpenedValueStore<MdmlASIntArithmetic<PlainT>, PlainT> store = resourcePool.getOpenedValueStore();
     if (isCheckRequired || store.exceedsThreshold(openValueThreshold)) {
       doMacCheck(resourcePool, network);
@@ -86,10 +88,10 @@ public class MdmlRoundSynchronization<
 
   @Override
   public void beforeBatch(
-      ProtocolCollection<MdmlResourcePool<PlainT>> nativeProtocols,
-      MdmlResourcePool<PlainT> resourcePool, Network network) {
+          ProtocolCollection<MdmlResourcePool<PlainT>> nativeProtocols,
+          MdmlResourcePool<PlainT> resourcePool, Network network) {
     this.isCheckRequired = StreamSupport.stream(nativeProtocols.spliterator(), false)
-        .anyMatch(p -> p instanceof RequiresMacCheck);
+            .anyMatch(p -> p instanceof RequiresMacCheck);
     OpenedValueStore<MdmlASIntArithmetic<PlainT>, PlainT> store = resourcePool.getOpenedValueStore();
     if (store.hasPendingValues() && this.isCheckRequired) {
       doMacCheck(resourcePool, network);

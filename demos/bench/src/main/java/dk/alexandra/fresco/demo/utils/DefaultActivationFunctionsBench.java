@@ -96,25 +96,25 @@ public class DefaultActivationFunctionsBench implements ActivationFunctionsBench
    * @return
    */
   private DRes<Matrix<DRes<SReal>>> ebe(Matrix<DRes<SReal>> m,
-      BiFunction<ProtocolBuilderNumeric, DRes<SReal>, DRes<SReal>> map) {
+                                        BiFunction<ProtocolBuilderNumeric, DRes<SReal>, DRes<SReal>> map) {
     return builder.par(par -> {
       Matrix<DRes<SReal>> matrix = new Matrix<>(m.getHeight(), m.getWidth(), i -> {
         return new ArrayList<>(
-            m.getRow(i).stream().map(x -> map.apply(par, x)).collect(Collectors.toCollection(ArrayList::new)));
+                m.getRow(i).stream().map(x -> map.apply(par, x)).collect(Collectors.toCollection(ArrayList::new)));
       });
       return () -> matrix;
     });
   }
   private DRes<Matrix<DRes<SReal>>> ebeRes(DRes<Matrix<DRes<SReal>>> m,
-                                      BiFunction<ProtocolBuilderNumeric, DRes<SReal>, DRes<SReal>> map) {
-  return builder.par(par -> {
-//    System.out.println("ReLU Start: " + System.currentTimeMillis() + " ms.");
-    Matrix<DRes<SReal>> matrix = new Matrix<>(m.out().getHeight(), m.out().getWidth(), i -> {
-      return new ArrayList<>(
-              m.out().getRow(i).stream().map(x -> map.apply(par, x)).collect(Collectors.toCollection(ArrayList::new)));
+                                           BiFunction<ProtocolBuilderNumeric, DRes<SReal>, DRes<SReal>> map) {
+    return builder.par(par -> {
+      Matrix<DRes<SReal>> mOut = m.out(); // Fix the lagging bug!!!
+      Matrix<DRes<SReal>> matrix = new Matrix<>(mOut.getHeight(), mOut.getWidth(), i -> {
+        return new ArrayList<>(
+                mOut.getRow(i).stream().map(x -> map.apply(par, x)).collect(Collectors.toCollection(ArrayList::new)));
+      });
+      return () -> matrix;
     });
-    return () -> matrix;
-  });
-}
+  }
 }
 
